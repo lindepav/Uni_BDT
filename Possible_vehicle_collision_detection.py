@@ -132,24 +132,24 @@ select_stream_reg = base_regbuses.writeStream \
 # MAGIC   select properties.trip.gtfs.route_id as bus_id,
 # MAGIC          properties.trip.gtfs.route_short_name as bus_number, 
 # MAGIC          properties.trip.vehicle_registration_number as bus_registr_num,
-# MAGIC          properties.trip.vehicle_type.description_en as vehicle_type,
-# MAGIC          properties.last_position.last_stop.id as stop_id,
+# MAGIC          properties.trip.vehicle_type.description_en as bus,
+# MAGIC          properties.last_position.last_stop.id as bus_stop_id,
 # MAGIC          properties.last_position.last_stop.arrival_time as arrival_time, 
 # MAGIC          properties.last_position.last_stop.departure_time as departure_time,
 # MAGIC          properties.last_position.delay.actual as delay, 
-# MAGIC          geometry
+# MAGIC          geometry as bus_geo
 # MAGIC   from data_buses;
 # MAGIC   
 # MAGIC create table buses_reg
-# MAGIC   select properties.trip.gtfs.route_id as bus_id,
-# MAGIC          properties.trip.gtfs.route_short_name as bus_number, 
-# MAGIC          properties.trip.vehicle_registration_number as bus_registr_num,
-# MAGIC          properties.trip.vehicle_type.description_en as vehicle_type,
-# MAGIC          properties.last_position.last_stop.id as stop_id,
-# MAGIC          properties.last_position.last_stop.arrival_time as arrival_time, 
-# MAGIC          properties.last_position.last_stop.departure_time as departure_time,
-# MAGIC          properties.last_position.delay.actual as delay, 
-# MAGIC          geometry
+# MAGIC   select properties.trip.gtfs.route_id as regbus_id,
+# MAGIC          properties.trip.gtfs.route_short_name as regbus_number, 
+# MAGIC          properties.trip.vehicle_registration_number as regbus_registr_num,
+# MAGIC          properties.trip.vehicle_type.description_en as regbus,
+# MAGIC          properties.last_position.last_stop.id as regbus_stop_id,
+# MAGIC          properties.last_position.last_stop.arrival_time as regbus_arrival_time, 
+# MAGIC          properties.last_position.last_stop.departure_time as regbus_departure_time,
+# MAGIC          properties.last_position.delay.actual as regbus_delay, 
+# MAGIC          geometry as regbus_geo
 # MAGIC   from data_regbuses
 
 # COMMAND ----------
@@ -171,9 +171,9 @@ select_stream_reg = base_regbuses.writeStream \
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC select bus_number, stop_id, arrival_time, departure_time, delay
+# MAGIC select regbus_number, regbus_stop_id, regbus_arrival_time, regbus_departure_time, regbus_delay
 # MAGIC from buses_reg
-# MAGIC where arrival_time <> departure_time
+# MAGIC where regbus_arrival_time <> regbus_departure_time
 
 # COMMAND ----------
 
@@ -183,10 +183,25 @@ select_stream_reg = base_regbuses.writeStream \
 # COMMAND ----------
 
 # MAGIC %sql
+# MAGIC drop table buses;
+
+# COMMAND ----------
+
+# MAGIC %sql
 # MAGIC create table buses 
 # MAGIC   select * 
 # MAGIC   from buses_city 
-# MAGIC   inner join buses_reg on buses_city.bus_id = buses_reg.tram_id 
+# MAGIC   inner join buses_reg on buses_city.bus_stop_id = buses_reg.regbus_stop_id 
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select count(*) from buses;
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC **Looks like there are no common stations so we continue only with topic of buses.**
 
 # COMMAND ----------
 
