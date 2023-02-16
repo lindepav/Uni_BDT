@@ -213,7 +213,7 @@ select_stream_reg = base_regbuses.writeStream \
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## 2. Detect buses, which may occur on one bus/tram/boat stop at the same time
+# MAGIC ## 2. Detect buses, which may occur on one bus stop at the same time
 # MAGIC 
 # MAGIC * Collision happens when the first bus is on the bus stop and the following buses have time gap only 3 minutes or lower
 # MAGIC * Collect places, where this happens, type of vehicle and short route name.
@@ -223,32 +223,72 @@ select_stream_reg = base_regbuses.writeStream \
 
 # MAGIC %md
 # MAGIC #### Detect event when any bus catches previous one at a specific stop:
-# MAGIC ##### 1. Get buses which are currently at the bus stop
+# MAGIC ##### 1. Get buses which are currently at a bus stop
 # MAGIC - `last_stop_id` = specific stop
 # MAGIC - first bus is on the bus stop - `bus_state = "at bus"`
-# MAGIC - get the time it is expected to depart from the station (with current delay): `current_time`
+# MAGIC - get the time it is expected to depart from a station (with current delay): `current_time`
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC select bus_number, bus_registr_num, trip_id, last_stop_id, delay, current_time, bus_state
-# MAGIC from buses_city
-# MAGIC where bus_state = "at_stop" and last_stop_id = "U43Z2P"
+# MAGIC create table first_buses
+# MAGIC   select bus_number, bus_registr_num, trip_id, last_stop_id, delay, cast(current_time as timestamp) as expected_departure1, bus_state
+# MAGIC   from buses_city
+# MAGIC   where bus_state = "at_stop"
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from first_buses limit 5;
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ##### 2. Get following buses that have time gap 3 minutes and lowe
+# MAGIC ##### 2. Get following buses
 # MAGIC - `next_stop_id` = specific stop
-# MAGIC - select arbirtrary `bus_state` (it can still be at the previous station or on the way to the current station)
+# MAGIC - select arbirtrary `bus_state` (it can still be at a previous station or on the way to a current station)
 # MAGIC - get the expected time to arrive to the next station as `schedule_next_stop_departure` + `delay` 
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC select bus_number, bus_registr_num, trip_id, next_stop_id, delay, current_time, schedule_next_stop_departure, bus_state
-# MAGIC from buses_city
-# MAGIC where next_stop_id = "U43Z2P"
+# MAGIC create table following_buses
+# MAGIC   select bus_number, bus_registr_num, trip_id, next_stop_id, delay, bus_state,
+# MAGIC     cast(current_time as timestamp), 
+# MAGIC     cast(schedule_next_stop_departure as timestamp), 
+# MAGIC     dateadd(second, delay, cast(schedule_next_stop_departure as timestamp)) as expected_departure2
+# MAGIC   from buses_city
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from following_buses limit 5;
+
+# COMMAND ----------
+
+# MAGIC %md 
+# MAGIC ##### 3. Find collisions within one stop
+# MAGIC * Collision happens when the first bus is on a bus stop and the following buses have time gap only 3 minutes or lower:
+# MAGIC `abs(expected_time1 - expected_time2) <= 3 minutes`
+# MAGIC - (absolute values because we are insterested in both situations)
+# MAGIC * Collect places, where this happens, type of vehicle and short route name.
+# MAGIC * (This can be easily edited to view collisions of the same bus line as well)
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select  bus_number1, bus_number2, bus_registr_num1, bus_registr_num2, stop_id1 as stop_id, expected_departure1, expected_departure2, 
+# MAGIC   timestampdiff(second, expected_departure1, expected_departure2) as diff_seconds
+# MAGIC from
+# MAGIC   (select bus_number as bus_number1, bus_registr_num as bus_registr_num1, last_stop_id as stop_id1, expected_departure1 from first_buses)
+# MAGIC   inner join 
+# MAGIC   (select bus_number as bus_number2, bus_registr_num as bus_registr_num2, next_stop_id as stop_id2, expected_departure2 from following_buses)
+# MAGIC   on stop_id1=stop_id2
+# MAGIC where timestampdiff(second, expected_departure1, expected_departure2) between -3 * 60 and 3 * 60
+
+# COMMAND ----------
+
+
 
 # COMMAND ----------
 
