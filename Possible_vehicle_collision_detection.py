@@ -81,7 +81,7 @@ select_stream_reg = base_regbuses.writeStream \
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC select count(*) from mem_buses limit 3;
+# MAGIC select (*) from mem_buses limit 3;
 
 # COMMAND ----------
 
@@ -108,7 +108,8 @@ select_stream_reg = base_regbuses.writeStream \
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Detection of the bus behind
+# MAGIC # Detection of the bus behind
+# MAGIC ## 1. Creating table for queries
 # MAGIC Firstly, let's make a new table with data needed for the detection:
 # MAGIC - Arrival and departure time of buses
 # MAGIC - delay of buses
@@ -133,10 +134,16 @@ select_stream_reg = base_regbuses.writeStream \
 # MAGIC          properties.trip.gtfs.route_short_name as bus_number, 
 # MAGIC          properties.trip.vehicle_registration_number as bus_registr_num,
 # MAGIC          properties.trip.vehicle_type.description_en as bus,
-# MAGIC          properties.last_position.last_stop.id as bus_stop_id,
-# MAGIC          properties.last_position.last_stop.arrival_time as arrival_time, 
-# MAGIC          properties.last_position.last_stop.departure_time as departure_time,
+# MAGIC          properties.last_position.last_stop.id as last_stop_id,
+# MAGIC          properties.last_position.next_stop.id as next_stop_id,
+# MAGIC          properties.trip.gtfs.trip_id as trip_id,
+# MAGIC          properties.last_position.state_position as bus_state,
 # MAGIC          properties.last_position.delay.actual as delay, 
+# MAGIC          properties.last_position.origin_timestamp as current_time,
+# MAGIC          properties.last_position.last_stop.arrival_time as schedule_last_stop_arrival, 
+# MAGIC          properties.last_position.last_stop.departure_time as schedule_last_stop_departure,
+# MAGIC          properties.last_position.next_stop.arrival_time as schedule_next_stop_arrival, 
+# MAGIC          properties.last_position.next_stop.departure_time as schedule_next_stop_departure,
 # MAGIC          geometry as bus_geo
 # MAGIC   from data_buses;
 # MAGIC   
@@ -191,7 +198,7 @@ select_stream_reg = base_regbuses.writeStream \
 # MAGIC create table buses 
 # MAGIC   select * 
 # MAGIC   from buses_city 
-# MAGIC   inner join buses_reg on buses_city.bus_stop_id = buses_reg.regbus_stop_id 
+# MAGIC   inner join buses_reg on buses_city.last_stop_id = buses_reg.regbus_stop_id 
 
 # COMMAND ----------
 
@@ -206,19 +213,49 @@ select_stream_reg = base_regbuses.writeStream \
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC **Detect buses, which may occur on one bus/tram/boat stop at the same time:**
-# MAGIC * Collision may happen when the first bus is on the bus stop and the following buses have time gap only 3 minutes or lower
+# MAGIC ## 2. Detect buses, which may occur on one bus/tram/boat stop at the same time
+# MAGIC 
+# MAGIC * Collision happens when the first bus is on the bus stop and the following buses have time gap only 3 minutes or lower
 # MAGIC * Collect places, where this happens, type of vehicle and short route name.
 # MAGIC * Find top 10 collision places
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC #### Detect event when any bus catches previous one at a specific stop:
+# MAGIC ##### 1. Get buses which are currently at the bus stop
+# MAGIC - `last_stop_id` = specific stop
+# MAGIC - first bus is on the bus stop - `bus_state = "at bus"`
+# MAGIC - get the time it is expected to depart from the station (with current delay): `current_time`
 
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select bus_number, bus_registr_num, trip_id, last_stop_id, delay, current_time, bus_state
+# MAGIC from buses_city
+# MAGIC where bus_state = "at_stop" and last_stop_id = "U43Z2P"
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ##### 2. Get following buses that have time gap 3 minutes and lowe
+# MAGIC - `next_stop_id` = specific stop
+# MAGIC - select arbirtrary `bus_state` (it can still be at the previous station or on the way to the current station)
+# MAGIC - get the expected time to arrive to the next station as `schedule_next_stop_departure` + `delay` 
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select bus_number, bus_registr_num, trip_id, next_stop_id, delay, current_time, schedule_next_stop_departure, bus_state
+# MAGIC from buses_city
+# MAGIC where next_stop_id = "U43Z2P"
 
 # COMMAND ----------
 
 # MAGIC %md 
-# MAGIC **Load stop names from file stops.json (obtained from pid website), make a new table with the stop names**
+# MAGIC ## 3. Load stop names 
+# MAGIC * from file stops.json obtained from pid website
+# MAGIC * make a new table with the stop names
 
 # COMMAND ----------
 
@@ -258,7 +295,7 @@ df_stops.createOrReplaceTempView("stops_names_table")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Create dashboard
+# MAGIC ## 4. Create dashboard
 # MAGIC Create table for coordinates in order to visualize the dashboard
 
 # COMMAND ----------
