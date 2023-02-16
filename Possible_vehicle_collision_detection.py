@@ -231,6 +231,11 @@ select_stream_reg = base_regbuses.writeStream \
 # COMMAND ----------
 
 # MAGIC %sql
+# MAGIC drop table first_buses
+
+# COMMAND ----------
+
+# MAGIC %sql
 # MAGIC create table first_buses
 # MAGIC   select bus_number, bus_registr_num, trip_id, last_stop_id, delay, cast(current_time as timestamp) as expected_departure1, bus_state
 # MAGIC   from buses_city
@@ -252,6 +257,11 @@ select_stream_reg = base_regbuses.writeStream \
 # COMMAND ----------
 
 # MAGIC %sql
+# MAGIC drop table following_buses
+
+# COMMAND ----------
+
+# MAGIC %sql
 # MAGIC create table following_buses
 # MAGIC   select bus_number, bus_registr_num, trip_id, next_stop_id, delay, bus_state,
 # MAGIC     cast(current_time as timestamp), 
@@ -267,28 +277,55 @@ select_stream_reg = base_regbuses.writeStream \
 # COMMAND ----------
 
 # MAGIC %md 
-# MAGIC ##### 3. Find collisions within one stop
+# MAGIC ##### 3. Find collisions within same bus lines
 # MAGIC * Collision happens when the first bus is on a bus stop and the following buses have time gap only 3 minutes or lower:
 # MAGIC `abs(expected_time1 - expected_time2) <= 3 minutes`
 # MAGIC - (absolute values because we are insterested in both situations)
 # MAGIC * Collect places, where this happens, type of vehicle and short route name.
-# MAGIC * (This can be easily edited to view collisions of the same bus line as well)
+# MAGIC * **Show collisions withing the same bus line only** (I understood this is the task from assignment)
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC select  bus_number1, bus_number2, bus_registr_num1, bus_registr_num2, stop_id1 as stop_id, expected_departure1, expected_departure2, 
-# MAGIC   timestampdiff(second, expected_departure1, expected_departure2) as diff_seconds
-# MAGIC from
-# MAGIC   (select bus_number as bus_number1, bus_registr_num as bus_registr_num1, last_stop_id as stop_id1, expected_departure1 from first_buses)
-# MAGIC   inner join 
-# MAGIC   (select bus_number as bus_number2, bus_registr_num as bus_registr_num2, next_stop_id as stop_id2, expected_departure2 from following_buses)
-# MAGIC   on stop_id1=stop_id2
-# MAGIC where timestampdiff(second, expected_departure1, expected_departure2) between -3 * 60 and 3 * 60
+# MAGIC drop table collisions
 
 # COMMAND ----------
 
+# MAGIC %sql
+# MAGIC create table collisions
+# MAGIC   select  bus_number1 as bus_number, bus_registr_num1, bus_registr_num2, stop_id1 as stop_id, expected_departure1, expected_departure2, 
+# MAGIC     timestampdiff(second, expected_departure1, expected_departure2) as diff_seconds
+# MAGIC   from
+# MAGIC     (select bus_number as bus_number1, bus_registr_num as bus_registr_num1, last_stop_id as stop_id1, expected_departure1 from first_buses)
+# MAGIC     inner join 
+# MAGIC     (select bus_number as bus_number2, bus_registr_num as bus_registr_num2, next_stop_id as stop_id2, expected_departure2 from following_buses)
+# MAGIC     on stop_id1=stop_id2 and bus_number1=bus_number2
+# MAGIC   where timestampdiff(second, expected_departure1, expected_departure2) between -3 * 60 and 3 * 60 
 
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from collisions limit 5;
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ##### 4. Find top 10 collision places
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC drop table top_collision_places;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC create table top_collision_places
+# MAGIC   select stop_id, count(stop_id) as collision_count
+# MAGIC   from collisions
+# MAGIC   group by stop_id
+# MAGIC   sort by count(stop_id) desc
+# MAGIC   limit 10
 
 # COMMAND ----------
 
@@ -312,6 +349,11 @@ len(stop_names), len(station_ids)
 
 # COMMAND ----------
 
+# MAGIC %sql 
+# MAGIC drop table stops_names_table
+
+# COMMAND ----------
+
 datadf = [[name, id] for name, id in zip(stop_names, station_ids)]
 columns = ["stop_name", "station_id"]
 df_stops = spark.createDataFrame(data = datadf, schema = columns)
@@ -320,23 +362,40 @@ df_stops.show(5)
 
 # COMMAND ----------
 
-# MAGIC %sql 
-# MAGIC drop table stops_names_table
-
-# COMMAND ----------
-
 df_stops.createOrReplaceTempView("stops_names_table")
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC select name,tram_arrival,tram_number,bus_arrival,bus_number from departures inner join stopID on departures.bus_id=stopID.stopid 
+# MAGIC create or replace table top_collision_places
+# MAGIC select stop_id, stop_name, collision_count
+# MAGIC from top_collision_places inner join stops_names_table on top_collision_places.stop_id=stops_names_table.station_id 
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Top 10 collision stops with names:
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from top_collision_places
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## 4. Create dashboard
 # MAGIC Create table for coordinates in order to visualize the dashboard
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select stop_id from top_collision_places
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC This is not optimal, did not have more time to fix it. It should draw only 10 places..
 
 # COMMAND ----------
 
@@ -348,9 +407,10 @@ df_stops.createOrReplaceTempView("stops_names_table")
 # MAGIC %sql
 # MAGIC CREATE table df_geo_table
 # MAGIC   SELECT 
-# MAGIC     cast(data_buses.geometry.coordinates[0] as double) AS x,
-# MAGIC     cast(data_buses.geometry.coordinates[1] as double) AS y
-# MAGIC   FROM data_buses;
+# MAGIC     cast(buses_city.bus_geo.coordinates[0] as double) AS x,
+# MAGIC     cast(buses_city.bus_geo.coordinates[1] as double) AS y
+# MAGIC   FROM top_collision_places
+# MAGIC   INNER JOIN buses_city on top_collision_places.stop_id=buses_city.last_stop_id;
 
 # COMMAND ----------
 
@@ -363,10 +423,6 @@ G = ox.graph_from_place("Praha, Czechia", custom_filter=custom_filter)
 
 # COMMAND ----------
 
-df_geo_p.loc[:5] 
-
-# COMMAND ----------
-
 fig, ax = ox.plot_graph(G, show=False, close=False) 
 df_geo = spark.sql("SELECT * FROM df_geo_table")
 df_geo_p = df_geo.toPandas() 
@@ -374,6 +430,11 @@ x = df_geo_p.loc[1:300,'x']
 y = df_geo_p.loc[1:300,'y'] 
 ax.scatter(x, y, c='red') 
 plt.show()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## and that's it. Thank you for reading.
 
 # COMMAND ----------
 
