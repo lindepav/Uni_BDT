@@ -434,8 +434,4 @@ plt.show()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## and that's it. Thank you for reading.
-
-# COMMAND ----------
-
-
+# MAGIC ## and that's it. Thank you for feedback!
